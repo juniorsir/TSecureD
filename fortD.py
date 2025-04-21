@@ -2,6 +2,9 @@ import telebot
 import os
 import logging
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import subprocess
+import threading
+import time
 
 # Load bot token and unique ID
 with open("bot_token.txt", "r") as file:
@@ -94,13 +97,23 @@ def run_custom_command(message):
         return
 
     command = message.text
-    try:
-        output = os.popen(command).read()
-        bot.send_message(message.chat.id, f"Command Output:\n{output}")
-        logging.info(f"Custom command '{command}' executed for user {message.chat.id}.")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"Error executing command: {e}")
-        logging.error(f"Error executing command '{command}' for user {message.chat.id}: {e}")
+    bot.send_message(message.chat.id, f"Running command:\n`{command}`", parse_mode="Markdown")
 
+    def stream_output():
+        try:
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            for line in iter(process.stdout.readline, ''):
+                if line.strip():
+                    bot.send_message(message.chat.id, f"`{line.strip()}`", parse_mode="Markdown")
+                    time.sleep(0.5)  # Prevent rate limit issues
+            process.stdout.close()
+            process.wait()
+            logging.info(f"Custom command '{command}' completed for user {message.chat.id}.")
+        except Exception as e:
+            bot.send_message(message.chat.id, f"Error: {e}")
+            logging.error(f"Error running '{command}' for user {message.chat.id}: {e}")
+
+    # Run in background to keep bot responsive
+    threading.Thread(target=stream_output).start()
 # Start bot
 bot.polling()
